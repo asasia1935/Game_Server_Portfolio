@@ -13,10 +13,30 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="헤더 파일\net">
+      <UniqueIdentifier>{2f85d62e-b094-4bc3-9f92-d598e7322460}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="소스 파일\net">
+      <UniqueIdentifier>{6ecdbf27-1f9a-4a96-b385-c7d5bf9e55d6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="헤더 파일\common">
+      <UniqueIdentifier>{89327ceb-9818-42fc-91ca-748cdae40105}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="GameServer.cpp">
+    <ClCompile Include="src\main.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="src\net\PacketFramer.cpp">
+      <Filter>소스 파일\net</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="inc\net\PacketFramer.h">
+      <Filter>헤더 파일\net</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\common\Types.h">
+      <Filter>헤더 파일\common</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
