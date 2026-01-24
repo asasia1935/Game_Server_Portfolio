@@ -44,6 +44,15 @@ void Session::Stop()
     }
 }
 
+void Session::RequestStop()
+{
+    // 내부/외부 어디서든 호출 가능 (멱등)
+    _running.store(false, std::memory_order_relaxed);
+
+    // recv를 깨우기 위해 소켓 닫기(멱등해야 함)
+    CloseSocket();
+}
+
 void Session::RecvLoop()
 {
     Log(_tag, "RecvLoop started");
@@ -65,7 +74,6 @@ void Session::RecvLoop()
     }
 
     _running.store(false);
-    CloseSocket();
     Log(_tag, "RecvLoop ended");
 }
 
@@ -74,7 +82,7 @@ void Session::OnRecv(const Byte* data, size_t len)
     if (!_framer.Append(data, len))
     {
         Log(_tag, std::string("Framer Append error: ") + _framer.LastErrorMessage());
-        Stop();
+        RequestStop();
         return;
     }
 
@@ -94,7 +102,7 @@ void Session::OnRecv(const Byte* data, size_t len)
         else
         {
             Log(_tag, std::string("Framer pop error: ") + _framer.LastErrorMessage());
-            Stop();
+            RequestStop();
             break;
         }
     }
@@ -110,7 +118,7 @@ void Session::Dispatch(const Frame& frame)
         if (!br.ReadU32LE(seq))
         {
             Log(_tag, "C_Ping malformed payload (need u32)");
-            Stop();
+            RequestStop();
             return;
         }
 
@@ -123,7 +131,7 @@ void Session::Dispatch(const Frame& frame)
 
     // Tier1 정책: 모르는 msg -> disconnect
     Log(_tag, "Unknown msgId=" + std::to_string(frame.msgId) + " -> disconnect");
-    Stop();
+    RequestStop();
 }
 
 bool Session::SendFrame(MsgId msgId, const Byte* payload, size_t payloadLen)
@@ -152,7 +160,8 @@ void Session::CloseSocket()
 {
     if (_sock == INVALID_SOCKET) return;
 
+    _sock = INVALID_SOCKET;
+
     ::shutdown(_sock, SD_BOTH);
     ::closesocket(_sock);
-    _sock = INVALID_SOCKET;
 }

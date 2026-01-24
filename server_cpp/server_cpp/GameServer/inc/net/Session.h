@@ -22,6 +22,7 @@ public:
 
     void Start();
     void Stop();
+    void RequestStop();
 
     bool IsRunning() const { return _running.load(); }
 
