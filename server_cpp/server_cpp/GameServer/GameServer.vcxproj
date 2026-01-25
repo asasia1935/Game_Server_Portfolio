@@ -136,12 +136,14 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\net\Acceptor.cpp" />
     <ClCompile Include="src\net\PacketFramer.cpp" />
     <ClCompile Include="src\net\Session.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="inc\common\ByteIO.h" />
     <ClInclude Include="inc\common\Types.h" />
+    <ClInclude Include="inc\net\Acceptor.h" />
     <ClInclude Include="inc\net\PacketFramer.h" />
     <ClInclude Include="inc\net\Session.h" />
   </ItemGroup>
