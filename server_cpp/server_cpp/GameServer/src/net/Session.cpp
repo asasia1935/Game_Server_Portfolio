@@ -11,14 +11,9 @@ static void Log(const std::string& tag, const std::string& msg)
     std::cout << "[" << tag << "] " << msg << "\n";
 }
 
-Session::Session(SOCKET sock) : _sock(sock)
+Session::Session(SOCKET sock, SessionId id, OnCloseFn onClose) : _sock(sock), _onClose(std::move(onClose)), _id(id)
 {
-    _tag = "Session";
-}
-
-Session::~Session()
-{
-    Stop();
+    _tag = "Session #" + std::to_string(_id);
 }
 
 void Session::Start()
@@ -29,19 +24,11 @@ void Session::Start()
 
 void Session::Stop()
 {
-    // 언제든 정지 요청 (이미 false여도 상관 없음)
-    _running.store(false);
+    RequestStop();
 
-    // recv를 깨우기 위해 소켓 닫기
-    CloseSocket();
-
-    // join은 running 상태랑 무관하게 해야 함
+    // 외부에서 호출하면 스레드 join
     if (_thread.joinable())
-    {
-        // 혹시 스레드 내부에서 Stop이 호출되는 경우를 대비
-        if (std::this_thread::get_id() != _thread.get_id())
-            _thread.join();
-    }
+        _thread.join();
 }
 
 void Session::RequestStop()
@@ -59,7 +46,7 @@ void Session::RecvLoop()
 
     Byte temp[4096];
 
-    while (_running.load())
+    while (_running.load(std::memory_order_relaxed))
     {
         int n = ::recv(_sock, (char*)temp, (int)sizeof(temp), 0);
         if (n > 0)
@@ -73,8 +60,15 @@ void Session::RecvLoop()
         }
     }
 
-    _running.store(false);
+    // 종료 정리
+    _running.store(false, std::memory_order_relaxed);
+    CloseSocket();
+
     Log(_tag, "RecvLoop ended");
+
+    // 세션 종료 알림
+    if (_onClose)
+        _onClose(_id);
 }
 
 void Session::OnRecv(const Byte* data, size_t len)
@@ -86,7 +80,7 @@ void Session::OnRecv(const Byte* data, size_t len)
         return;
     }
 
-    while (_running.load())
+    while (_running.load(std::memory_order_relaxed))
     {
         Frame frame;
         auto r = _framer.TryPopFrame(frame);
@@ -145,7 +139,7 @@ bool Session::SendFrame(MsgId msgId, const Byte* payload, size_t payloadLen)
 bool Session::SendAll(const Byte* data, size_t len)
 {
     size_t sent = 0;
-    while (sent < len && _running.load())
+    while (sent < len && _running.load(std::memory_order_relaxed))
     {
         int n = ::send(_sock, (const char*)(data + sent), (int)(len - sent), 0);
         if (n <= 0)

@@ -1,4 +1,5 @@
 #include "net/Acceptor.h"
+#include "net/SessionManager.h"
 #include "net/Session.h"
 
 #include <iostream>
@@ -10,6 +11,7 @@ static void Log(const std::string& tag, const std::string& msg)
 
 Acceptor::Acceptor()
 {
+    _sessionMgr = std::make_unique<SessionManager>();
     _tag = "Acceptor";
 }
 
@@ -39,8 +41,8 @@ bool Acceptor::Start(uint16_t port)
 void Acceptor::Stop()
 {
     // 멱등
-    bool wasRunning = _running.exchange(false);
-    (void)wasRunning;
+    if (!_running.exchange(false))
+        return;
 
     // accept 깨우기: listen 소켓 닫기
     if (_listenSock != INVALID_SOCKET)
@@ -54,11 +56,10 @@ void Acceptor::Stop()
     if (_acceptThread.joinable())
         _acceptThread.join();
 
-    // 단일 세션 정리 (세션매니저가 없으니 여기서 직접 Stop)
-    if (_session)
+    // 전체 세션 종료(Stop=join)
+    if (_sessionMgr)
     {
-        _session->Stop();
-        _session.reset();
+        _sessionMgr->StopAll();
     }
 
     Log(_tag, "Stopped");
@@ -106,14 +107,6 @@ void Acceptor::AcceptLoop()
 
     while (_running.load())
     {
-        // 세션매니저가 없으니 1명만 받는 가정.
-        // 이미 세션이 있으면 새 연결은 받지 않음.
-        if (_session)
-        {
-            ::Sleep(50);
-            continue;
-        }
-
         sockaddr_in caddr{};
         int clen = sizeof(caddr);
 
@@ -124,19 +117,15 @@ void Acceptor::AcceptLoop()
             break;
         }
 
+        // 세션 생성/등록은 매니저가 담당
+        auto session = _sessionMgr->CreateAndAdd(clientSock);
+        session->Start();
+
         char ipbuf[64]{};
         inet_ntop(AF_INET, &caddr.sin_addr, ipbuf, (socklen_t)sizeof(ipbuf));
         uint16_t cport = ntohs(caddr.sin_port);
 
         Log(_tag, std::string("Accepted client: ") + ipbuf + ":" + std::to_string(cport));
-
-        // lifetime을 유지하기 위해 멤버로 잡아둠
-        _session = std::make_shared<Session>(clientSock);
-
-        // (선택) 1-1이라면 여기서 onClose 콜백도 직접 연결 가능
-        // _session->SetOnClose([this](uint64_t){ _session.reset(); });
-
-        _session->Start();
     }
 
     Log(_tag, "AcceptLoop ended");

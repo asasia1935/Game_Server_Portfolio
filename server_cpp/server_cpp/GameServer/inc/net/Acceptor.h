@@ -7,7 +7,7 @@
 #include <thread>
 #include <string>
 
-class Session;
+class SessionManager;
 
 class Acceptor
 {
@@ -31,8 +31,8 @@ private:
     SOCKET _listenSock{ INVALID_SOCKET };
     std::thread _acceptThread;
 
-    // 세션매니저 없으니, 단일 세션을 여기서 잡고 lifetime 유지
-    std::shared_ptr<Session> _session;
+    // 세션매니저가 lifetime 책임
+    std::unique_ptr<SessionManager> _sessionMgr;
 
     uint16_t _port{ 0 };
 
