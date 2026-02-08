@@ -19,7 +19,9 @@ Session::Session(SOCKET sock, SessionId id, OnCloseFn onClose) : _sock(sock), _o
 void Session::Start()
 {
     if (_running.exchange(true)) return;
-    _thread = std::thread(&Session::RecvLoop, this);
+
+    _recvThread = std::thread(&Session::RecvLoop, this);
+    _sendThread = std::thread(&Session::SendLoop, this);
 }
 
 void Session::Stop()
@@ -27,8 +29,10 @@ void Session::Stop()
     RequestStop();
 
     // 외부에서 호출하면 스레드 join
-    if (_thread.joinable())
-        _thread.join();
+    if (_recvThread.joinable())
+        _recvThread.join();
+    if (_sendThread.joinable())
+        _sendThread.join();
 }
 
 void Session::RequestStop()
@@ -36,8 +40,27 @@ void Session::RequestStop()
     // 내부/외부 어디서든 호출 가능 (멱등)
     _running.store(false, std::memory_order_relaxed);
 
+    // send thread 깨우기 -> 대기중인 send 스레드 즉시 종료 (wait에서 깨어나서 조건 확인 후 큐가 비면 break -> 스레드 종료)
+    _sendCv.notify_all();
+
     // recv를 깨우기 위해 소켓 닫기(멱등해야 함)
     CloseSocket();
+}
+
+bool Session::SendFrame(MsgId msgId, const Byte* payload, size_t payloadLen)
+{
+    if (!_running.load(std::memory_order_relaxed))
+        return false;
+
+    ByteBuffer frame = BuildFrame(msgId, payload, payloadLen);
+
+    {
+        std::lock_guard<std::mutex> lock(_sendMutex);
+        _sendQ.emplace_back(std::move(frame));
+    }
+
+    _sendCv.notify_one();
+    return true;
 }
 
 void Session::RecvLoop()
@@ -62,6 +85,8 @@ void Session::RecvLoop()
 
     // 종료 정리
     _running.store(false, std::memory_order_relaxed);
+    _sendCv.notify_all(); // send loop도 빠져나가게
+
     CloseSocket();
 
     Log(_tag, "RecvLoop ended");
@@ -69,6 +94,49 @@ void Session::RecvLoop()
     // 세션 종료 알림
     if (_onClose)
         _onClose(_id);
+}
+
+void Session::SendLoop()
+{
+    Log(_tag, "SendLoop started");
+
+    for (;;)
+    {
+        ByteBuffer toSend;
+
+        {
+            std::unique_lock<std::mutex> lock(_sendMutex);
+
+            // 큐가 비었고 아직 running이면 대기
+            _sendCv.wait(lock, [&] {
+                return !_sendQ.empty() || !_running.load(std::memory_order_relaxed);
+                });
+
+            // running=false이고 보낼 것도 없으면 종료
+            if (_sendQ.empty() && !_running.load(std::memory_order_relaxed))
+                break;
+
+            // 하나 꺼내기
+            if (!_sendQ.empty())
+            {
+                toSend = std::move(_sendQ.front());
+                _sendQ.pop_front();
+            }
+        }
+
+        if (!toSend.empty())
+        {
+            // 실제 send는 send thread 단독으로 수행 => 프레임 섞임 없음
+            if (!SendAll(toSend.data(), toSend.size()))
+            {
+                // send 실패면 종료 요청
+                RequestStop();
+                break;
+            }
+        }
+    }
+
+    Log(_tag, "SendLoop ended");
 }
 
 void Session::OnRecv(const Byte* data, size_t len)
@@ -116,24 +184,20 @@ void Session::Dispatch(const Frame& frame)
             return;
         }
 
+        Log(_tag, "C_Ping Received!");
+
         // reply: S_Pong(seq)
         ByteWriter w;
         w.WriteU32LE(seq);
         SendFrame(S_Pong, w.buf.data(), w.buf.size());
+
+        Log(_tag, "S_Pong Sent!");
         return;
     }
 
     // Tier1 정책: 모르는 msg -> disconnect
     Log(_tag, "Unknown msgId=" + std::to_string(frame.msgId) + " -> disconnect");
     RequestStop();
-}
-
-bool Session::SendFrame(MsgId msgId, const Byte* payload, size_t payloadLen)
-{
-    std::lock_guard<std::mutex> lock(_sendMutex);
-
-    ByteBuffer frame = BuildFrame(msgId, payload, payloadLen);
-    return SendAll(frame.data(), frame.size());
 }
 
 bool Session::SendAll(const Byte* data, size_t len)

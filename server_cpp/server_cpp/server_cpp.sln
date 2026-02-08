@@ -1,9 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.10.35013.160
+# Visual Studio Version 18
+VisualStudioVersion = 18.2.11415.280 d18.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GameServer", "GameServer\GameServer.vcxproj", "{A463E44E-F0AF-4CA1-93F8-4F7613DA8010}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ClientConsole", "ClientConsole\ClientConsole.vcxproj", "{6830DF1F-7C40-4D89-B73E-CF722134083C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,6 +23,14 @@ Global
 		{A463E44E-F0AF-4CA1-93F8-4F7613DA8010}.Release|x64.Build.0 = Release|x64
 		{A463E44E-F0AF-4CA1-93F8-4F7613DA8010}.Release|x86.ActiveCfg = Release|Win32
 		{A463E44E-F0AF-4CA1-93F8-4F7613DA8010}.Release|x86.Build.0 = Release|Win32
+		{6830DF1F-7C40-4D89-B73E-CF722134083C}.Debug|x64.ActiveCfg = Debug|x64
+		{6830DF1F-7C40-4D89-B73E-CF722134083C}.Debug|x64.Build.0 = Debug|x64
+		{6830DF1F-7C40-4D89-B73E-CF722134083C}.Debug|x86.ActiveCfg = Debug|Win32
+		{6830DF1F-7C40-4D89-B73E-CF722134083C}.Debug|x86.Build.0 = Debug|Win32
+		{6830DF1F-7C40-4D89-B73E-CF722134083C}.Release|x64.ActiveCfg = Release|x64
+		{6830DF1F-7C40-4D89-B73E-CF722134083C}.Release|x64.Build.0 = Release|x64
+		{6830DF1F-7C40-4D89-B73E-CF722134083C}.Release|x86.ActiveCfg = Release|Win32
+		{6830DF1F-7C40-4D89-B73E-CF722134083C}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

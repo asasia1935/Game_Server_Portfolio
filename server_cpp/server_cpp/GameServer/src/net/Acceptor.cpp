@@ -9,9 +9,8 @@ static void Log(const std::string& tag, const std::string& msg)
     std::cout << "[" << tag << "] " << msg << "\n";
 }
 
-Acceptor::Acceptor()
+Acceptor::Acceptor(SessionManager* mgr) : _sessionMgr(mgr)
 {
-    _sessionMgr = std::make_unique<SessionManager>();
     _tag = "Acceptor";
 }
 
@@ -55,12 +54,6 @@ void Acceptor::Stop()
     // accept 스레드 정리
     if (_acceptThread.joinable())
         _acceptThread.join();
-
-    // 전체 세션 종료(Stop=join)
-    if (_sessionMgr)
-    {
-        _sessionMgr->StopAll();
-    }
 
     Log(_tag, "Stopped");
 }

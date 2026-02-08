@@ -36,6 +36,9 @@
     <ClCompile Include="src\net\Acceptor.cpp">
       <Filter>소스 파일\net</Filter>
     </ClCompile>
+    <ClCompile Include="src\net\SessionManager.cpp">
+      <Filter>소스 파일\net</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="inc\net\PacketFramer.h">
@@ -51,6 +54,9 @@
       <Filter>헤더 파일\net</Filter>
     </ClInclude>
     <ClInclude Include="inc\net\Acceptor.h">
+      <Filter>헤더 파일\net</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\net\SessionManager.h">
       <Filter>헤더 파일\net</Filter>
     </ClInclude>
   </ItemGroup>

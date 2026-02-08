@@ -38,57 +38,55 @@ std::shared_ptr<Session> SessionManager::CreateAndAdd(SOCKET clientSock)
 
 void SessionManager::Remove(SessionId id)
 {
-    std::shared_ptr<Session> victim;
+    std::lock_guard<std::mutex> lock(_mtx);
+    auto it = _sessions.find(id);
+    if (it == _sessions.end())
+        return;
 
-    {
-        std::lock_guard<std::mutex> lock(_mtx);
-        auto it = _sessions.find(id);
-        if (it == _sessions.end())
-            return;
+    // map에서 빼고 zombies로 이동 (즉시 소멸 방지)
+    _zombies.emplace_back(std::move(it->second));
+    _sessions.erase(it);
 
-        victim = it->second;
-        _sessions.erase(it);
-    }
-
-    // Session 스레드에서 Remove가 호출될 수 있으므로 join은 절대 하지 말자.
-    // 대신 종료 요청만.
-    if (victim)
-        victim->RequestStop();
-
-    // victim이 여기서 소멸할 수 있음.
-    // Session::~Session이 Stop()을 호출(=join)하면 "자기 스레드 join" 문제가 다시 생김.
-    //
-    // 그래서 가장 깔끔한 정답은:
-    //    - Session::~Session에서 Stop() 호출 제거 (소유자가 Stop/Join 책임)
-    //    - 또는 Session 내부에서 스레드가 끝난 후에만 onClose 호출되도록 보장
-    //
-    // 현재 코드는 onClose를 RecvLoop 끝에서 호출하니까,
-    // Remove가 호출되는 시점은 "스레드가 이미 종료된 뒤"라 self-join 위험이 없음.
-    // (이 보장이 깨지지 않게 '잠금 포인트'로 고정!)
+    // 여기서 RequestStop/Stop/join 아무것도 하지 말기
+    // (이미 RecvLoop 끝에서 호출되므로 종료 상태일 확률이 높고,
+    // 무엇보다 "세션 스레드에서 실행될 수" 있어서 위험)
 }
 
 void SessionManager::StopAll()
 {
-    std::vector<std::shared_ptr<Session>> copied;
+    std::vector<std::shared_ptr<Session>> local;
 
     {
         std::lock_guard<std::mutex> lock(_mtx);
-        copied.reserve(_sessions.size());
         for (auto& kv : _sessions)
-            copied.push_back(kv.second);
+            local.push_back(kv.second);
         _sessions.clear();
+
+        // zombies도 같이 꺼내기
+        for (auto& z : _zombies)
+            local.push_back(z);
+        _zombies.clear();
     }
 
-    // 외부에서 StopAll 호출 → join 가능
-    for (auto& s : copied)
-    {
-        if (s)
-            s->Stop();
-    }
+    for (auto& s : local)
+        s->Stop();
 }
 
 size_t SessionManager::Count() const
 {
     std::lock_guard<std::mutex> lock(_mtx);
     return _sessions.size();
+}
+
+void SessionManager::ReapClosed()
+{
+    std::vector<std::shared_ptr<Session>> local;
+
+    {
+        std::lock_guard<std::mutex> lock(_mtx);
+        local.swap(_zombies);
+    }
+
+    for (auto& s : local)
+        s->Stop();  // 외부 스레드에서 join
 }

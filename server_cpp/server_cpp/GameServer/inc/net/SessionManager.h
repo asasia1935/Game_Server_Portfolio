@@ -29,9 +29,14 @@ public:
 
     size_t Count() const;
 
+    void ReapClosed();
+
 private:
     mutable std::mutex _mtx;
     std::unordered_map<SessionId, std::shared_ptr<Session>> _sessions;
 
     std::atomic<SessionId> _idGen{ 0 };
+    
+    // 수거 대기
+    std::vector<std::shared_ptr<Session>> _zombies;
 };

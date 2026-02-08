@@ -10,7 +10,156 @@
 #include "common/Types.h"
 #include "common/ByteIO.h"
 #include "net/Session.h"
+#include "net/Acceptor.h"
+#include "net/SessionManager.h"
 
+int main()
+{
+    WSADATA wsa{};
+    int ret = WSAStartup(MAKEWORD(2, 2), &wsa);
+    if (ret != 0)
+    {
+        std::cout << "WSAStartup failed: " << ret << "\n";
+        return 1;
+    }
+
+    SessionManager sessionMgr;
+
+    // Acceptor가 세션매니저를 쓰게 연결
+    Acceptor acceptor(&sessionMgr);
+    if (!acceptor.Start(7777))
+        return 1;
+
+    std::atomic<bool> reapRun{ true };
+    std::thread reaper([&] {
+        while (reapRun.load())
+        {
+            sessionMgr.ReapClosed();
+            ::Sleep(50);
+        }
+        });
+
+    std::cout << "Server listening on 7777\n";
+    std::cout << "Press Enter to quit...\n";
+    std::cin.get();
+
+    reapRun = false;
+    reaper.join();
+
+    acceptor.Stop();
+    sessionMgr.StopAll();
+
+    WSACleanup();
+    return 0;
+}
+
+/////////////////////////////////
+// Framer 단위테스트 코드 주석
+/////////////////////////////////
+
+//// 프레임 만들어주는 헬퍼: [uint16 length][uint16 msg_id][payload]
+//static ByteBuffer MakeFrame(MsgId msgId, const ByteBuffer& payload)
+//{
+//    const uint16 length = static_cast<uint16>(2 + payload.size()); // msg_id(2) + payload
+//    ByteBuffer out;
+//    out.reserve(2 + length);
+//
+//    // length LE
+//    out.push_back(static_cast<Byte>(length & 0xFF));
+//    out.push_back(static_cast<Byte>((length >> 8) & 0xFF));
+//
+//    // msg_id LE
+//    out.push_back(static_cast<Byte>(msgId & 0xFF));
+//    out.push_back(static_cast<Byte>((msgId >> 8) & 0xFF));
+//
+//    // payload
+//    out.insert(out.end(), payload.begin(), payload.end());
+//    return out;
+//}
+//
+//static void PrintFrame(const Frame& f)
+//{
+//    std::cout << "Frame msgId=" << f.msgId << ", payloadLen=" << f.payload.size() << "\n";
+//}
+//PacketFramer framer;
+//
+//// TEST 1) 프레임 2개를 붙여서 한 번에 Append -> 2개 Pop
+//{
+//    Frame out;
+//
+//    ByteBuffer p1 = { 1,2,3 };
+//    ByteBuffer p2 = { 9,8 };
+//
+//    auto f1 = MakeFrame(1101, p1);
+//    auto f2 = MakeFrame(1102, p2);
+//
+//    ByteBuffer merged;
+//    merged.reserve(f1.size() + f2.size());
+//    merged.insert(merged.end(), f1.begin(), f1.end());
+//    merged.insert(merged.end(), f2.begin(), f2.end());
+//
+//    if (!framer.Append(merged.data(), merged.size()))
+//    {
+//        std::cout << "Append error: " << framer.LastErrorMessage() << "\n";
+//        return 1;
+//    }
+//
+//    auto r1 = framer.TryPopFrame(out);
+//    if (r1 != PopResult::Ok) { std::cout << "TEST1 pop1 failed\n"; return 1; }
+//    PrintFrame(out);
+//
+//    auto r2 = framer.TryPopFrame(out);
+//    if (r2 != PopResult::Ok) { std::cout << "TEST1 pop2 failed\n"; return 1; }
+//    PrintFrame(out);
+//
+//    auto r3 = framer.TryPopFrame(out);
+//    if (r3 != PopResult::NeedMore) { std::cout << "TEST1 expected NeedMore\n"; return 1; }
+//
+//    framer.Clear();
+//    std::cout << "[TEST1 OK]\n";
+//}
+//
+//// TEST 2) 프레임 1개를 반으로 쪼개서 Append 2번 -> 2번째에 Pop
+//{
+//    Frame out;
+//
+//    ByteBuffer payload = { 7,7,7,7,7 };
+//    auto frame = MakeFrame(1200, payload);
+//
+//    const size_t half = frame.size() / 2;
+//
+//    if (!framer.Append(frame.data(), half))
+//    {
+//        std::cout << "Append error: " << framer.LastErrorMessage() << "\n";
+//        return 1;
+//    }
+//
+//    auto r1 = framer.TryPopFrame(out);
+//    if (r1 != PopResult::NeedMore) { std::cout << "TEST2 expected NeedMore\n"; return 1; }
+//
+//    if (!framer.Append(frame.data() + half, frame.size() - half))
+//    {
+//        std::cout << "Append error: " << framer.LastErrorMessage() << "\n";
+//        return 1;
+//    }
+//
+//    auto r2 = framer.TryPopFrame(out);
+//    if (r2 != PopResult::Ok) { std::cout << "TEST2 pop failed\n"; return 1; }
+//    PrintFrame(out);
+//
+//    framer.Clear();
+//    std::cout << "[TEST2 OK]\n";
+//}
+//
+//std::cout << "All tests passed.\n";
+
+//////////////////////////////////////////////////////////////////
+
+/////////////////////////////////
+// Session 단위테스트 코드 주석
+/////////////////////////////////
+
+/*
 // ---- (HELPERS) -------------------------------------------------------------
 
 static bool SendAll(SOCKET s, const Byte* data, size_t len)
@@ -111,10 +260,8 @@ static bool MakeLoopbackConnection(SOCKET& outServerAccepted, SOCKET& outClient)
     return true;
 }
 
-// ---- MAIN ------------------------------------------------------------------
+// ---- MAIN TEST --------------------------------------------------------------
 
-int main()
-{
     WSADATA wsa{};
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
     {
@@ -230,107 +377,4 @@ int main()
 
     WSACleanup();
     return 0;
-}
-
-/////////////////////////////////
-// Framer 단위테스트 코드 주석
-/////////////////////////////////
-
-//// 프레임 만들어주는 헬퍼: [uint16 length][uint16 msg_id][payload]
-//static ByteBuffer MakeFrame(MsgId msgId, const ByteBuffer& payload)
-//{
-//    const uint16 length = static_cast<uint16>(2 + payload.size()); // msg_id(2) + payload
-//    ByteBuffer out;
-//    out.reserve(2 + length);
-//
-//    // length LE
-//    out.push_back(static_cast<Byte>(length & 0xFF));
-//    out.push_back(static_cast<Byte>((length >> 8) & 0xFF));
-//
-//    // msg_id LE
-//    out.push_back(static_cast<Byte>(msgId & 0xFF));
-//    out.push_back(static_cast<Byte>((msgId >> 8) & 0xFF));
-//
-//    // payload
-//    out.insert(out.end(), payload.begin(), payload.end());
-//    return out;
-//}
-//
-//static void PrintFrame(const Frame& f)
-//{
-//    std::cout << "Frame msgId=" << f.msgId << ", payloadLen=" << f.payload.size() << "\n";
-//}
-//PacketFramer framer;
-//
-//// TEST 1) 프레임 2개를 붙여서 한 번에 Append -> 2개 Pop
-//{
-//    Frame out;
-//
-//    ByteBuffer p1 = { 1,2,3 };
-//    ByteBuffer p2 = { 9,8 };
-//
-//    auto f1 = MakeFrame(1101, p1);
-//    auto f2 = MakeFrame(1102, p2);
-//
-//    ByteBuffer merged;
-//    merged.reserve(f1.size() + f2.size());
-//    merged.insert(merged.end(), f1.begin(), f1.end());
-//    merged.insert(merged.end(), f2.begin(), f2.end());
-//
-//    if (!framer.Append(merged.data(), merged.size()))
-//    {
-//        std::cout << "Append error: " << framer.LastErrorMessage() << "\n";
-//        return 1;
-//    }
-//
-//    auto r1 = framer.TryPopFrame(out);
-//    if (r1 != PopResult::Ok) { std::cout << "TEST1 pop1 failed\n"; return 1; }
-//    PrintFrame(out);
-//
-//    auto r2 = framer.TryPopFrame(out);
-//    if (r2 != PopResult::Ok) { std::cout << "TEST1 pop2 failed\n"; return 1; }
-//    PrintFrame(out);
-//
-//    auto r3 = framer.TryPopFrame(out);
-//    if (r3 != PopResult::NeedMore) { std::cout << "TEST1 expected NeedMore\n"; return 1; }
-//
-//    framer.Clear();
-//    std::cout << "[TEST1 OK]\n";
-//}
-//
-//// TEST 2) 프레임 1개를 반으로 쪼개서 Append 2번 -> 2번째에 Pop
-//{
-//    Frame out;
-//
-//    ByteBuffer payload = { 7,7,7,7,7 };
-//    auto frame = MakeFrame(1200, payload);
-//
-//    const size_t half = frame.size() / 2;
-//
-//    if (!framer.Append(frame.data(), half))
-//    {
-//        std::cout << "Append error: " << framer.LastErrorMessage() << "\n";
-//        return 1;
-//    }
-//
-//    auto r1 = framer.TryPopFrame(out);
-//    if (r1 != PopResult::NeedMore) { std::cout << "TEST2 expected NeedMore\n"; return 1; }
-//
-//    if (!framer.Append(frame.data() + half, frame.size() - half))
-//    {
-//        std::cout << "Append error: " << framer.LastErrorMessage() << "\n";
-//        return 1;
-//    }
-//
-//    auto r2 = framer.TryPopFrame(out);
-//    if (r2 != PopResult::Ok) { std::cout << "TEST2 pop failed\n"; return 1; }
-//    PrintFrame(out);
-//
-//    framer.Clear();
-//    std::cout << "[TEST2 OK]\n";
-//}
-//
-//std::cout << "All tests passed.\n";
-
-//////////////////////////////////////////////////////////////////
-
+*/

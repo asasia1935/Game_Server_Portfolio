@@ -12,7 +12,7 @@ class SessionManager;
 class Acceptor
 {
 public:
-    Acceptor();
+    explicit Acceptor(SessionManager* mgr);
     ~Acceptor();
 
     // port로 listen 시작 (성공 true)
@@ -31,8 +31,7 @@ private:
     SOCKET _listenSock{ INVALID_SOCKET };
     std::thread _acceptThread;
 
-    // 세션매니저가 lifetime 책임
-    std::unique_ptr<SessionManager> _sessionMgr;
+    SessionManager* _sessionMgr{ nullptr }; // 소유 X, 참조만
 
     uint16_t _port{ 0 };
 
